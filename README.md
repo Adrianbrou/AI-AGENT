@@ -1,5 +1,5 @@
-# AI-AGENT : CLI AI Assistant
-
+# AI-AGENT : 
+### PHASE I: CLI AI Assistant
 A simple command-line interface that sends prompts to Google's Gemini API and
 prints the response directly to your terminal.
 
