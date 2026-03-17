@@ -10,3 +10,8 @@ wheels/
 .venv
 #environements variables
 .env
+
+#config files
+config.py
+
+calculator/lorem.txt
