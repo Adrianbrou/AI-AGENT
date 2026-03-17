@@ -1,48 +1,75 @@
-import os,argparse
+import os
+import argparse
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
 
 def main():
-    #load the .env 
+    """
+    Entry point for the Gemini AI agent CLI.
+
+    Loads the Gemini API key from a .env file, accepts a user prompt via
+    the command line, sends it to the Gemini model, and prints the response.
+    Optionally prints token usage metadata in verbose mode.
+
+    CLI Usage:
+        uv run main.py "your prompt here"
+        uv run main.py "your prompt here" --verbose
+
+    Environment:
+        GEMINI_API_KEY (str): Required. Your Gemini API key, stored in .env.
+
+    Raises:
+        RuntimeError: If GEMINI_API_KEY is missing from the environment.
+        RuntimeError: If the API response contains no usage metadata.
+    """
+
+    # Load environment variables from .env into os.environ.
     load_dotenv()
-    #handle any possible error on loading the api key from .env
+
+    # Retrieve the API key — fail fast if it's missing rather than getting
+    # a cryptic error later when the API call is made.
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        raise RuntimeError("API key not in .env file")
-    #create client object that we use to make calls on the api 
+        raise RuntimeError("API key not found in .env file")
+
+    # The client is the gateway to all Gemini API calls.
     client = genai.Client(api_key=api_key)
-    #add arguments parameter for user input
-    parser = argparse.ArgumentParser(description="ai agent")
+
+    # Set up the CLI — user_prompt is required, --verbose is optional.
+    parser = argparse.ArgumentParser(description="Gemini AI agent")
     parser.add_argument("user_prompt", type=str, help="Prompt to send to Gemini")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
-
-
     args = parser.parse_args()
-    
 
-    # Create a new list of types.Content, and set the user's prompt as the only message
-    messages = [types.Content(role="user", parts=[types.Part(text=args.user_prompt)])]
+    # Gemini expects a list of Content objects representing the conversation.
+    # Each Content has a role ("user" or "model") and a list of Parts (text, images, etc.).
+    # Here we start a fresh single-turn conversation with the user's prompt.
+    messages = [
+        types.Content(role="user", parts=[types.Part(text=args.user_prompt)])
+    ]
 
-    #this is a generate content response object
-    response = client.models.generate_content(model="gemini-2.5-flash",contents = messages)
-    """  PROPRETIES     """
-    #The user's prompt: 
+    # Send the message to Gemini and get a GenerateContentResponse object.
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=messages
+    )
 
-    # usage_metadata: this proprety help to now how match token tou have consumned from the agent
+    # usage_metadata tracks token consumption for this request.
+    # prompt_token_count  — tokens used by the input (our messages).
+    # candidates_token_count — tokens used by the model's response.
     if not response.usage_metadata:
-        raise RuntimeError("API key not found in .env file")
+        raise RuntimeError("No usage metadata returned from API")
+
     if args.verbose:
         print(f"User prompt: {args.user_prompt}")
-        print("Prompt tokens:", response.usage_metadata.prompt_token_count)
-        print("Response tokens:", response.usage_metadata.candidates_token_count)
+        print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
+        print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
 
-    # candidates_token_count property, showing the number of tokens in the model's response.
-
-    #.text proprety to get the text response from the API
+    # .text is a convenience property that returns the model's response as a string.
     print(response.text)
-  
+
 
 if __name__ == "__main__":
     main()
