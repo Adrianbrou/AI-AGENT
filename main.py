@@ -38,13 +38,14 @@ def main():
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
 
-    # Configure logging — DEBUG in verbose mode, INFO otherwise.
-    # Format keeps it clean: just level + message, no timestamps in CLI output.
+    # Set root logger to WARNING to silence noisy third-party libraries.
+    # Then configure our own logger separately at the appropriate level.
     logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
+        level=logging.WARNING,
         format="%(levelname)s: %(message)s",
     )
     log = logging.getLogger(__name__)
+    log.setLevel(logging.DEBUG if args.verbose else logging.INFO)
 
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
