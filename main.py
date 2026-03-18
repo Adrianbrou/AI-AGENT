@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from call_function.call_function import available_functions
+from call_function.call_function import call_function
 
 
 def main():
@@ -73,7 +74,15 @@ def main():
     # .text is a convenience property that returns the model's response as a string.
     if response.function_calls:
         for function_call in response.function_calls:
-            print(f"Calling function: {function_call.name}({function_call.args})")
+            function_call_result = call_function(function_call, args.verbose)
+            if not function_call_result.parts:
+                raise Exception("No parts in function call result")
+            if not function_call_result.parts[0].function_response:
+                raise Exception("No function response in parts")
+            if function_call_result.parts[0].function_response.response is None:
+                raise Exception("No response in function response")
+            if args.verbose:
+                print(f"-> {function_call_result.parts[0].function_response.response}")
     else:
         print(response.text)
 
