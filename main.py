@@ -4,10 +4,11 @@ import logging
 import argparse
 from config import MAX_ITERATIONS
 from dotenv import load_dotenv
-from google import genai
 from google.genai import types
 from prompts.prompts import system_prompt
 from call_function.call_function import available_functions, call_function
+from providers.gemini import GeminiProvider
+from providers.openai import OpenAIProvider
 
 
 def main():
@@ -22,9 +23,11 @@ def main():
     CLI Usage:
         uv run main.py "your prompt here"
         uv run main.py "your prompt here" --verbose
+        uv run main.py "your prompt here" --provider openai
 
     Environment:
-        GEMINI_API_KEY (str): Required. Stored in .env.
+        GEMINI_API_KEY (str): Required for Gemini provider.
+        OPENAI_API_KEY (str): Required for OpenAI provider.
 
     Exits:
         0 — Normal exit after a final response.
@@ -36,6 +39,7 @@ def main():
     parser = argparse.ArgumentParser(description="Gemini AI coding agent")
     parser.add_argument("user_prompt", type=str, help="Task or question for the agent")
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
+    parser.add_argument("--provider", type=str, default="gemini", choices=["gemini", "openai"], help="LLM provider to use (default: gemini)")
     args = parser.parse_args()
 
     # Set root logger to WARNING to silence noisy third-party libraries.
@@ -47,14 +51,22 @@ def main():
     log = logging.getLogger(__name__)
     log.setLevel(logging.DEBUG if args.verbose else logging.INFO)
 
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        log.error("GEMINI_API_KEY not found in .env file")
-        sys.exit(1)
-
-    client = genai.Client(api_key=api_key)
+    # --- Provider selection ---
+    if args.provider == "openai":
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            log.error("OPENAI_API_KEY not found in .env file")
+            sys.exit(1)
+        provider = OpenAIProvider(api_key)
+    else:
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            log.error("GEMINI_API_KEY not found in .env file")
+            sys.exit(1)
+        provider = GeminiProvider(api_key)
 
     log.debug("User prompt: %s", args.user_prompt)
+    log.debug("Provider: %s", args.provider)
 
     # Seed the conversation with the user's prompt.
     # The messages list grows each iteration as the model and tools exchange turns.
@@ -72,21 +84,15 @@ def main():
     for iteration in range(MAX_ITERATIONS):
         log.debug("--- Iteration %d ---", iteration + 1)
 
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=messages,
-            config=types.GenerateContentConfig(
-                tools=[available_functions],
-                system_instruction=system_prompt,
-                temperature=0,
-            ),
-        )
+        response = provider.generate(messages)
 
-        log.debug(
-            "Tokens — prompt: %d, response: %d",
-            response.usage_metadata.prompt_token_count,
-            response.usage_metadata.candidates_token_count,
-        )
+        # Token logging is provider-dependent — OpenAI returns None here.
+        if response.usage_metadata:
+            log.debug(
+                "Tokens — prompt: %d, response: %d",
+                response.usage_metadata.prompt_token_count,
+                response.usage_metadata.candidates_token_count,
+            )
 
         # Keep the model's response in history so future iterations have context.
         for candidate in response.candidates:
