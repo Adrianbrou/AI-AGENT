@@ -1,5 +1,6 @@
 import os
 import sys
+import logging
 import argparse
 from config import MAX_ITERATIONS
 from dotenv import load_dotenv
@@ -7,10 +8,6 @@ from google import genai
 from google.genai import types
 from prompts.prompts import system_prompt
 from call_function.call_function import available_functions, call_function
-
-# Maximum number of agentic loop iterations before we give up.
-# This prevents runaway token consumption if the model never settles.
-
 
 
 def main():
@@ -35,20 +32,28 @@ def main():
     """
     load_dotenv()
 
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY not found in .env file")
-
-    client = genai.Client(api_key=api_key)
-
     # --- CLI arguments ---
     parser = argparse.ArgumentParser(description="Gemini AI coding agent")
     parser.add_argument("user_prompt", type=str, help="Task or question for the agent")
-    parser.add_argument("--verbose", action="store_true", help="Print token usage and function results")
+    parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
 
-    if args.verbose:
-        print(f"User prompt: {args.user_prompt}")
+    # Configure logging — DEBUG in verbose mode, INFO otherwise.
+    # Format keeps it clean: just level + message, no timestamps in CLI output.
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(levelname)s: %(message)s",
+    )
+    log = logging.getLogger(__name__)
+
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        log.error("GEMINI_API_KEY not found in .env file")
+        sys.exit(1)
+
+    client = genai.Client(api_key=api_key)
+
+    log.debug("User prompt: %s", args.user_prompt)
 
     # Seed the conversation with the user's prompt.
     # The messages list grows each iteration as the model and tools exchange turns.
@@ -63,7 +68,8 @@ def main():
     #   3. If no function calls → model is done, print final answer and exit.
     #   4. Otherwise, execute each requested function and collect results.
     #   5. Append tool results to history so the model sees them next iteration.
-    for _ in range(MAX_ITERATIONS):
+    for iteration in range(MAX_ITERATIONS):
+        log.debug("--- Iteration %d ---", iteration + 1)
 
         response = client.models.generate_content(
             model="gemini-2.5-flash",
@@ -75,9 +81,11 @@ def main():
             ),
         )
 
-        if args.verbose:
-            print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
-            print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
+        log.debug(
+            "Tokens — prompt: %d, response: %d",
+            response.usage_metadata.prompt_token_count,
+            response.usage_metadata.candidates_token_count,
+        )
 
         # Keep the model's response in history so future iterations have context.
         for candidate in response.candidates:
@@ -92,8 +100,7 @@ def main():
         function_responses = []
         for function_call in response.function_calls:
             result = call_function(function_call, args.verbose)
-            if args.verbose:
-                print(f"-> {result.parts[0].function_response.response}")
+            log.debug("-> %s", result.parts[0].function_response.response)
             function_responses.append(result.parts[0])
 
         # Feed tool results back into the conversation as a "user" turn.
@@ -102,7 +109,7 @@ def main():
 
     else:
         # The for loop exhausted all iterations without hitting a break.
-        print("Error: max iterations reached without a final response")
+        log.error("Max iterations (%d) reached without a final response", MAX_ITERATIONS)
         sys.exit(1)
 
 
