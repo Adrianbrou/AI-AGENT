@@ -1,5 +1,6 @@
 import os
 import argparse
+from prompts.prompts import system_prompt
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -53,7 +54,8 @@ def main():
     # Send the message to Gemini and get a GenerateContentResponse object.
     response = client.models.generate_content(
         model="gemini-2.5-flash",
-        contents=messages
+        contents=messages,
+        config=types.GenerateContentConfig(system_instruction=system_prompt)
     )
 
     # usage_metadata tracks token consumption for this request.
