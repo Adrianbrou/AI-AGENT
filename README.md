@@ -201,3 +201,8 @@ MIT — built as part of the [Boot.dev](https://boot.dev) backend curriculum.
 ---
 
 *Built by [Adrian Brou](https://github.com/Adrianbrou) — Software Engineering graduate pursuing backend + DevOps roles.*
+
+## Certificate
+
+Completed as part of the [Boot.dev](https://boot.dev) Backend Developer curriculum.  
+[View Certificate](https://www.boot.dev/certificates/40f82cd7-c8d5-4977-b6d7-fe706157e9f1)
