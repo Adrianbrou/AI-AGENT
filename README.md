@@ -1,104 +1,167 @@
-# AI Agent
+# AI Coding Agent
 
-A command-line AI assistant powered by Google's Gemini API. Send natural language prompts directly from your terminal and get intelligent responses back instantly.
+A production-grade, autonomous coding agent built from scratch in Python — no LangChain, no frameworks. Just the Gemini API, clean architecture, and raw engineering.
+
+> Give it a task. Watch it think. It reads your code, finds the bug, writes the fix, runs the tests, and reports back.
 
 ---
 
-## What It Does
+## Demo
 
-This is a CLI tool that accepts a coding task and autonomously works through it using a set of predefined functions:
+```bash
+$ uv run main.py "Fix the bug: 3 + 7 * 2 shouldn't be 20"
 
-- Scan the files in a directory
-- Read a file's contents
-- Write or overwrite a file's contents
-- Execute the Python interpreter on a file
+ - Calling function: get_files_info
+ - Calling function: get_file_content
+ - Calling function: get_file_content
+ - Calling function: write_file
+ - Calling function: run_python_file
 
-The agent repeats these actions in a loop until the task is complete. For example:
-```sh
-uv run main.py "fix my calculator app, it's not starting correctly"
-
-# Calling function: get_files_info
-# Calling function: get_file_content
-# Calling function: write_file
-# Calling function: run_python_file
-# Calling function: write_file
-# Calling function: run_python_file
-# Final response:
-# The calculator app is now working correctly.
+The bug has been fixed. The + operator had an incorrect precedence of 3,
+which caused it to evaluate before *. I restored it to 1 and confirmed
+that 3 + 7 * 2 now correctly returns 17.
 ```
 
 ---
 
-## Project Structure
+## How It Works
+
+The agent runs an **agentic loop** — it calls the LLM, executes whatever tools it requests, feeds the results back, and repeats until it has a final answer for you.
+
+```
+User Prompt
+     │
+     ▼
+┌─────────────────────────────────────────┐
+│              Agentic Loop               │
+│                                         │
+│  ┌─────────┐     ┌──────────────────┐   │
+│  │  Gemini │────▶│  Function Call?  │   │
+│  │   LLM   │     └────────┬─────────┘   │
+│  └────▲────┘              │ Yes         │
+│       │            ┌──────▼──────┐      │
+│       │            │  Execute    │      │
+│       └────────────│  Function   │      │
+│      Feed result   └─────────────┘      │
+│                                         │
+│         No function call → DONE         │
+└─────────────────────────────────────────┘
+     │
+     ▼
+Final Response
+```
+
+The LLM never directly touches your filesystem — it *requests* function calls, and the Python runtime executes them within a sandboxed working directory.
+
+---
+
+## Features
+
+| Capability | Details |
+|---|---|
+|  **File navigation** | List directories with size and type metadata |
+|  **File reading** | Read file contents with configurable character cap |
+|  **File writing** | Write or overwrite files, auto-creating parent dirs |
+|  **Code execution** | Run Python files with args, capture stdout/stderr |
+|  **Path sandboxing** | All file ops are jailed to the working directory |
+|  **Agentic loop** | Up to 20 iterations with full conversation history |
+|  **Verbose mode** | Token usage, function calls, and raw results |
+
+---
+
+## Architecture
+
 ```
 ai_agent/
-├── calculator/
-│   ├── main.py
-│   ├── pkg/
-│   │   ├── calculator.py
-│   │   └── render.py
-│   └── tests.py
+├── main.py                  # CLI entry point + agentic loop
+├── prompts/
+│   └── prompts.py           # System prompt for the LLM
+├── call_function/
+│   └── call_function.py     # Function router + tool registry
 ├── functions/
-│   ├── __init__.py
-│   ├── get_files_info.py
-│   ├── get_file_content.py
-│   └── write_file.py
-├── config.py
-├── main.py
-└── .env
+│   ├── get_files_info.py    # List directory contents
+│   ├── get_file_content.py  # Read file contents
+│   ├── write_file.py        # Write file contents
+│   └── run_python_file.py   # Execute Python files
+├── config.py                # Shared constants (MAX_CHARS, etc.)
+└── calculator/              # Sample codebase for the agent to work on
+    ├── main.py
+    ├── tests.py
+    └── pkg/
+        ├── calculator.py
+        └── render.py
 ```
+
+**Key design decisions:**
+- Each function is sandboxed — `working_directory` is always injected server-side, never exposed to the LLM
+- Functions always return strings — clean, consistent interface between the runtime and the LLM
+- The tool registry is a simple dict — easy to extend with new functions
+- Conversation history grows each loop iteration — the model always has full context
 
 ---
 
-## Requirements
+## Tech Stack
 
-- Python 3.10+
-- [uv](https://github.com/astral-sh/uv) package manager
-- A valid [Gemini API key](https://aistudio.google.com/app/apikey)
+- **Python 3.11**
+- **Google Gemini API** (`gemini-2.5-flash`) via `google-genai`
+- **uv** — fast Python package manager
+- **python-dotenv** — environment variable management
+- **subprocess** — sandboxed Python execution
 
 ---
 
 ## Setup
 
-1. Clone the repository:
-```sh
-   git clone https://github.com/Adrianbrou/ai_agent.git
-   cd ai_agent
+**1. Clone the repo**
+```bash
+git clone https://github.com/Adrianbrou/AI-AGENT.git
+cd AI-AGENT
 ```
 
-2. Install dependencies:
-```sh
-   uv sync
+**2. Install dependencies**
+```bash
+uv sync
 ```
 
-3. Create a `.env` file in the project root:
-```sh
-   GEMINI_API_KEY=your_api_key_here
+**3. Add your Gemini API key**
+```bash
+# Create a .env file in the project root
+echo "GEMINI_API_KEY=your_key_here" > .env
 ```
+Get a free key at [Google AI Studio](https://aistudio.google.com/app/apikey).
 
 ---
 
 ## Usage
 
-**Basic prompt:**
-```sh
-uv run main.py "your task here"
+**Run a task:**
+```bash
+uv run main.py "explain how the calculator renders results"
 ```
 
-**Verbose mode:**
-```sh
-uv run main.py "your task here" --verbose
+**Verbose mode (shows token usage + function results):**
+```bash
+uv run main.py "fix the bug in calculator.py" --verbose
+```
+
+**Example tasks to try:**
+```bash
+uv run main.py "what files are in the calculator project?"
+uv run main.py "read main.py and explain what it does"
+uv run main.py "run the calculator tests and tell me if they pass"
+uv run main.py "refactor render.py to use f-strings instead of .format()"
 ```
 
 ---
 
-## Phases
+## Security Notes
 
-### Phase 1 — CLI AI Assistant
-Single-turn CLI that sends a prompt to Gemini and prints the response. Supports verbose token usage output.
+This is a **learning project** — not production-ready for general use.
 
-### Phase 2 — Tool-Calling Agent
-Extends the agent with function calling so the model can interact with the local filesystem within a sandboxed working directory.
+- The agent is sandboxed to `./calculator` by default
+- It can execute arbitrary Python within that directory
+- Do not point it at sensitive codebases
+- Do not share your `.env` file or API key
 
 ---
 
@@ -106,10 +169,35 @@ Extends the agent with function calling so the model can interact with the local
 
 | Variable | Required | Description |
 |---|---|---|
-| `GEMINI_API_KEY` | Yes | Your Google Gemini API key |
+| `GEMINI_API_KEY` |  Yes | Your Google Gemini API key |
+
+---
+
+## What I Learned
+
+Building this without a framework forced me to understand what agents actually are under the hood:
+
+- LLMs don't "call" functions — they *describe* function calls, and you execute them
+- The agentic loop is just a while loop with a conversation history list
+- Sandboxing is your responsibility — the model will happily path-traverse if you let it
+- System prompt engineering is real work — the agent's behavior changes dramatically based on how you instruct it
+
+---
+
+## Roadmap
+
+- [ ] Structured logging (replace print statements with `logging` module)
+- [ ] Support multiple LLM providers (OpenAI, Claude)
+- [ ] Recursive directory search tool
+- [ ] `search_in_files` grep-like tool
+- [ ] Web search tool integration
 
 ---
 
 ## License
 
-MIT
+MIT — built as part of the [Boot.dev](https://boot.dev) backend curriculum.
+
+---
+
+*Built by [Adrian Brou](https://github.com/Adrianbrou) — Software Engineering graduate pursuing backend + DevOps roles.*
