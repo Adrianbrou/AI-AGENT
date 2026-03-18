@@ -2,6 +2,7 @@ from functions.get_files_info import get_files_info
 from functions.get_file_content import get_file_content
 from functions.write_file import write_file
 from functions.run_python_file import run_python_file
+from functions.search_in_files import search_in_files
 
 
 from google.genai import types
@@ -9,6 +10,7 @@ from functions.get_files_info import schema_get_files_info
 from functions.get_file_content import schema_get_content_info
 from functions.write_file import schema_write_file
 from functions.run_python_file import schema_run_python_file
+from functions.search_in_files import schema_search_in_files
 
 
 def call_function(function_call, verbose=False):
@@ -22,6 +24,7 @@ def call_function(function_call, verbose=False):
         "get_file_content": get_file_content,
         "write_file": write_file,
         "run_python_file": run_python_file,
+        "search_in_files": search_in_files,
     }
 
     function_name = function_call.name or ""
@@ -59,6 +62,7 @@ available_functions = types.Tool(
         schema_get_content_info,
         schema_write_file,
         schema_run_python_file,
+        schema_search_in_files,
     ],
 )
 
