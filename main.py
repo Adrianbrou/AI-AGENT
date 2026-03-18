@@ -4,6 +4,7 @@ from prompts.prompts import system_prompt
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+from call_function.call_function import available_functions
 
 
 def main():
@@ -55,7 +56,7 @@ def main():
     response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=messages,
-        config=types.GenerateContentConfig(system_instruction=system_prompt)
+        config=types.GenerateContentConfig(tools =[available_functions],system_instruction=system_prompt,temperature=0)
     )
 
     # usage_metadata tracks token consumption for this request.
@@ -70,7 +71,11 @@ def main():
         print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
 
     # .text is a convenience property that returns the model's response as a string.
-    print(response.text)
+    if response.function_calls:
+        for function_call in response.function_calls:
+            print(f"Calling function: {function_call.name}({function_call.args})")
+    else:
+        print(response.text)
 
 
 if __name__ == "__main__":
