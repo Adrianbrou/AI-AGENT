@@ -1,90 +1,109 @@
 import os
+import sys
 import argparse
-from prompts.prompts import system_prompt
+from config import MAX_ITERATIONS
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from call_function.call_function import available_functions
-from call_function.call_function import call_function
+from prompts.prompts import system_prompt
+from call_function.call_function import available_functions, call_function
+
+# Maximum number of agentic loop iterations before we give up.
+# This prevents runaway token consumption if the model never settles.
+
 
 
 def main():
     """
-    Entry point for the Gemini AI agent CLI.
+    Entry point for the Gemini AI coding agent CLI.
 
-    Loads the Gemini API key from a .env file, accepts a user prompt via
-    the command line, sends it to the Gemini model, and prints the response.
-    Optionally prints token usage metadata in verbose mode.
+    Boots the agent, sends the user's prompt, and runs an agentic loop:
+    the model decides which tools to call, we execute them, feed the results
+    back, and repeat — until the model produces a final text response or the
+    iteration limit is hit.
 
     CLI Usage:
         uv run main.py "your prompt here"
         uv run main.py "your prompt here" --verbose
 
     Environment:
-        GEMINI_API_KEY (str): Required. Your Gemini API key, stored in .env.
+        GEMINI_API_KEY (str): Required. Stored in .env.
 
-    Raises:
-        RuntimeError: If GEMINI_API_KEY is missing from the environment.
-        RuntimeError: If the API response contains no usage metadata.
+    Exits:
+        0 — Normal exit after a final response.
+        1 — Max iterations reached without a final response.
     """
-
-    # Load environment variables from .env into os.environ.
     load_dotenv()
 
-    # Retrieve the API key — fail fast if it's missing rather than getting
-    # a cryptic error later when the API call is made.
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        raise RuntimeError("API key not found in .env file")
+        raise RuntimeError("GEMINI_API_KEY not found in .env file")
 
-    # The client is the gateway to all Gemini API calls.
     client = genai.Client(api_key=api_key)
 
-    # Set up the CLI — user_prompt is required, --verbose is optional.
-    parser = argparse.ArgumentParser(description="Gemini AI agent")
-    parser.add_argument("user_prompt", type=str, help="Prompt to send to Gemini")
-    parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
+    # --- CLI arguments ---
+    parser = argparse.ArgumentParser(description="Gemini AI coding agent")
+    parser.add_argument("user_prompt", type=str, help="Task or question for the agent")
+    parser.add_argument("--verbose", action="store_true", help="Print token usage and function results")
     args = parser.parse_args()
 
-    # Gemini expects a list of Content objects representing the conversation.
-    # Each Content has a role ("user" or "model") and a list of Parts (text, images, etc.).
-    # Here we start a fresh single-turn conversation with the user's prompt.
+    if args.verbose:
+        print(f"User prompt: {args.user_prompt}")
+
+    # Seed the conversation with the user's prompt.
+    # The messages list grows each iteration as the model and tools exchange turns.
     messages = [
         types.Content(role="user", parts=[types.Part(text=args.user_prompt)])
     ]
 
-    # Send the message to Gemini and get a GenerateContentResponse object.
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=messages,
-        config=types.GenerateContentConfig(tools =[available_functions],system_instruction=system_prompt,temperature=0)
-    )
+    # --- Agentic loop ---
+    # Each iteration:
+    #   1. Ask the model what to do next.
+    #   2. Append the model's response to conversation history.
+    #   3. If no function calls → model is done, print final answer and exit.
+    #   4. Otherwise, execute each requested function and collect results.
+    #   5. Append tool results to history so the model sees them next iteration.
+    for _ in range(MAX_ITERATIONS):
 
-    # usage_metadata tracks token consumption for this request.
-    # prompt_token_count  — tokens used by the input (our messages).
-    # candidates_token_count — tokens used by the model's response.
-    if not response.usage_metadata:
-        raise RuntimeError("No usage metadata returned from API")
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=messages,
+            config=types.GenerateContentConfig(
+                tools=[available_functions],
+                system_instruction=system_prompt,
+                temperature=0,
+            ),
+        )
 
-    if args.verbose:
-        print(f"User prompt: {args.user_prompt}")
-        print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
-        print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
+        if args.verbose:
+            print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
+            print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
 
-    # .text is a convenience property that returns the model's response as a string.
-    if response.function_calls:
+        # Keep the model's response in history so future iterations have context.
+        for candidate in response.candidates:
+            messages.append(candidate.content)
+
+        # No function calls means the model has a final answer — we're done.
+        if not response.function_calls:
+            print(response.text)
+            break
+
+        # Execute each function the model requested and collect the results.
+        function_responses = []
         for function_call in response.function_calls:
-            function_call_result = call_function(function_call, args.verbose)
-            if not function_call_result.parts:
-                raise Exception("No parts in function call result")
-            if not function_call_result.parts[0].function_response:
-                raise Exception("No function response in parts")
-            if function_call_result.parts[0].function_response.response is None:
-                raise Exception("No response in function response")
+            result = call_function(function_call, args.verbose)
             if args.verbose:
-                print(f"-> {function_call_result.parts[0].function_response.response}")
+                print(f"-> {result.parts[0].function_response.response}")
+            function_responses.append(result.parts[0])
+
+        # Feed tool results back into the conversation as a "user" turn.
+        # The model will see these on the next iteration.
+        messages.append(types.Content(role="user", parts=function_responses))
+
     else:
-        print(response.text)
+        # The for loop exhausted all iterations without hitting a break.
+        print("Error: max iterations reached without a final response")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
